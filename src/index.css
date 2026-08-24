@@ -1,0 +1,80 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "IBM Plex Sans", "Inter", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", ui-monospace, monospace;
+
+  --color-bg-canvas: #020617;
+  --color-bg-panel: #0a1120;
+  --color-bg-panel-raised: #0f1a2e;
+  --color-bg-inset: #060c18;
+  --color-hairline: #1b2740;
+  --color-hairline-strong: #26334f;
+
+  --color-ink-100: #edf1f7;
+  --color-ink-300: #b8c4d9;
+  --color-ink-500: #7c8aa8;
+  --color-ink-700: #4a566f;
+
+  --color-med-cyan: #22d3ee;
+  --color-med-cyan-dim: #0e7490;
+  --color-med-cyan-glow: #67e8f9;
+
+  --color-act-none: #94a3b8;
+  --color-act-sitting: #3b82f6;
+  --color-act-standing: #6366f1;
+  --color-act-walking: #10b981;
+  --color-act-lying: #14b8a6;
+  --color-act-possible: #f59e0b;
+  --color-act-confirmed: #e11d48;
+
+  --color-clinical-bg: #f8fafc;
+  --color-clinical-panel: #ffffff;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  background: var(--color-bg-canvas);
+  color: var(--color-ink-100);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+.font-data {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-hairline-strong) transparent;
+}
+*::-webkit-scrollbar { width: 8px; height: 8px; }
+*::-webkit-scrollbar-thumb { background: var(--color-hairline-strong); border-radius: 4px; }
+*::-webkit-scrollbar-track { background: transparent; }
+
+@keyframes pulse-ring {
+  0% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0.45); }
+  70% { box-shadow: 0 0 0 8px rgba(245, 158, 11, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(245, 158, 11, 0); }
+}
+.animate-pulse-ring { animation: pulse-ring 1.8s cubic-bezier(0.4,0,0.6,1) infinite; }
+
+@keyframes flash-urgent {
+  0%, 100% { background-color: rgba(225, 29, 72, 0.18); }
+  50% { background-color: rgba(225, 29, 72, 0.38); }
+}
+.animate-flash-urgent { animation: flash-urgent 1s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-ring, .animate-flash-urgent { animation: none; }
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-med-cyan);
+  outline-offset: 2px;
+}

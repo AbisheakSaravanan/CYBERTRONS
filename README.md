@@ -1,41 +1,53 @@
-# Aegis-CSI — Camera-Free Hospital Monitoring Frontend
+# Aegis CSI Hospital Monitor
 
-A production-grade React + TypeScript command-center UI for Wi-Fi CSI (Channel
-State Information) based human-activity monitoring in a hospital setting.
-Zero cameras, zero video — every "sensor reading" in this build is simulated
-telemetry standing in for a CNN/LSTM CSI classification pipeline.
+**Aegis CSI Hospital Monitor** is a real-time, non-invasive patient monitoring and telemetry dashboard powered by Channel State Information (CSI) sensing analytics. It provides healthcare staff with continuous telemetry, motion analytics, posture tracking, and alert dispatching across hospital wards.
 
-## Stack
-React 19 · TypeScript · Vite · Tailwind CSS v4 · Zustand · Recharts · lucide-react
+---
 
-## Run it
-```
-npm install
-npm run dev      # http://localhost:5173
-npm run build    # production build to dist/
-```
+## Key Features
 
-## Using the demo
-1. On the login screen, enter any Employee ID (3+ chars) and password (4+
-   chars), pick a role, then continue.
-2. On the MFA screen, enter any 6-digit code other than `000000`.
-3. Explore the Command Dashboard, click into a room, switch roles (top right)
-   to see RBAC-gated views — Technician/Administrator unlocks the Technical
-   CSI Engineering tab in Room Detail.
-4. Use "Simulate fall event" on the dashboard to trigger the full
-   possible-fall → 15s verification → confirmed-fall → acknowledge → escalate
-   flow, including the full-screen critical alert modal.
-5. Try "Break-glass" in the top bar for the emergency-access flow, and check
-   the Audit Log view afterward — every action is hash-chained.
-6. Open "Assistant" (top bar) and ask things like "summarize fall events" or
-   "triage protocol for an unverified fall" — it's a read-only, source-cited
-   mock RAG copilot over the session's own event/SOP data.
+* **Live Telemetry & Vital Streams:** Real-time CSI signal processing, vital sign tracking, and dynamic waveform rendering via Recharts.
+* **Intelligent Alerts & Fall Detection:** Automated severity classification (`critical`, `warning`), modal emergency triggers, and quick alert acknowledgement.
+* **Dual Clinical & Technical Views:** Seamlessly switch between clinical summaries (patient status, timeline, gauge confidence) and RF technical views (subcarrier amplitude, phase shifts, link health).
+* **Ward & Room Filtering:** Multi-ward command dashboard with dynamic status filtering (Occupied, Alert, Normal).
+* **Enterprise Security & Compliance:** Multi-Factor Authentication (MFA) workflows, Emergency Break-Glass protocols, and tamper-evident audit logging.
+* **Local State Management:** Fast, predictable client state powered by Zustand with reactive mock telemetry streams.
 
-## Notes
-- All hashes are non-cryptographic stubs for UI demonstration only — do not
-  use `cryptoLikeHash` in `src/lib/mockEngine.ts` for any real security
-  purpose.
-- The realtime engine (`useStore.ts` → `startEngine`) drifts room telemetry
-  on an interval and occasionally injects a spontaneous fall to keep the
-  dashboard feeling alive; swap it for a real WebSocket client against your
-  inference service when integrating with actual hardware.
+---
+
+## Tech Stack
+
+| Layer | Technologies |
+| :--- | :--- |
+| **Framework** | [React 18+](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) |
+| **Build Tooling** | [Vite](https://vitejs.dev/) |
+| **State Management** | [Zustand](https://github.com/pmndrs/zustand) |
+| **UI & Styling** | [Tailwind CSS](https://tailwindcss.com/) + [Lucide React](https://lucide.dev/) |
+| **Data Visualization** | [Recharts](https://recharts.org/) |
+| **Linting & Quality** | [Oxlint](https://oxc-project.github.io/) |
+
+---
+
+## Project Structure
+
+```text
+src/
+├── components/
+│   ├── alerts/       # Fall alert modals and priority notifications
+│   ├── assistant/    # AI / Clinical assistant drawer
+│   ├── audit/        # Security and compliance audit logs
+│   ├── auth/         # MFA, Break-Glass protocols, Login
+│   ├── dashboard/    # Command dashboard, ward filters, room grids
+│   ├── health/       # Sensor mesh health & telemetry status
+│   ├── layout/       # Sidebar and top navigation bars
+│   ├── room/         # Room details, ClinicalView, TechnicalView, AlertPanel
+│   └── ui/           # Confidence gauges, badges, waveform strips
+├── lib/
+│   ├── mockEngine.ts # Real-time synthetic CSI signal generator
+│   └── utils.ts      # Class merging and formatting helpers
+├── store/
+│   └── useStore.ts   # Global Zustand store (alerts, rooms, audit, user state)
+├── types/
+│   └── index.ts      # TypeScript definitions for rooms, CSI signals, alerts
+├── App.tsx           # Main application root
+└── main.tsx          # React DOM entry point

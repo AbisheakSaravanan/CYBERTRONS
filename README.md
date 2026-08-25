@@ -1,6 +1,4 @@
-# AegisCSI Hospital Monitor
-
-AegisCSI is a state-of-the-art clinical Wi-Fi Channel State Information (CSI) patient monitoring system. It leverages ESP32 nodes to capture real-time physical perturbations, passes them through a signal processing pipeline, feeds them to machine learning classifiers, and visualizes live activity, diagnostics, and critical fall alerts on a secure, responsive hospital dashboard.
+# Wi-fi based camera-less detection system
 
 ---
 

@@ -4,20 +4,43 @@ AegisCSI is a state-of-the-art clinical Wi-Fi Channel State Information (CSI) pa
 
 ---
 
-## System Architecture
+## Wave Similarity Matching System Architecture
 
 ```mermaid
-graph TD
-    ESP[ESP32 CSI Transmitter/Receiver] -- Serial (115200) --> Bridge[ESP32 Relaying Bridge]
-    Bridge -- HTTP POST /api/ingest --> FastAPI[FastAPI Backend Server]
-    FastAPI -- SQLAlchemy --> DB[(SQLite / PostgreSQL DB)]
-    FastAPI -- WebSockets /ws/live --> React[React Hospital Board Dashboard]
-    
-    subgraph FastAPI Backend
-        Pipe[Signal Processing Pipeline] --> ML[Statistical Fallback Classifier]
-        ML --> Staging[Fall Staging Logic]
-        Staging --> Sweeper[Background Alert Sweeper]
+flowchart TD
+    %% Define styles and colors to look rich and premium
+    classDef process fill:#020617,stroke:#3b82f6,stroke-width:2px,color:#f8fafc;
+    classDef db fill:#0f172a,stroke:#22c55e,stroke-width:2px,color:#f8fafc;
+    classDef engine fill:#1e1b4b,stroke:#8b5cf6,stroke-width:2px,color:#f8fafc;
+    classDef results fill:#0f172a,stroke:#eab308,stroke-width:2px,color:#f8fafc;
+    classDef offline fill:#172554,stroke:#3b82f6,stroke-width:1px,stroke-dasharray: 5 5,color:#eff6ff;
+    classDef realtime fill:#2d1500,stroke:#f97316,stroke-width:1px,stroke-dasharray: 5 5,color:#fff7ed;
+
+    %% 1. Offline Registration Process
+    subgraph Offline["1. OFFLINE REGISTRATION PROCESS"]
+        DB["Wave Database<br/>(Stored Sine Waveforms)"] --> CNN1["CNN Encoder<br/>(Feature Extraction via CNN)"]
+        CNN1 --> FP1["Wave Fingerprint Vector<br/>(16 Numbers - Compact representation)"]
+        FP1 --> Index["Vector Embedding Index<br/>(Indexed storage of all fingerprint vectors)"]
     end
+    
+    %% 2. Real-Time Matching Process
+    subgraph RealTime["2. REAL-TIME MATCHING PROCESS"]
+        SPU["SPU Input (Signal Processing Unit)<br/>(Live / Incoming Waveform)"] --> CNN2["CNN Encoder<br/>(Feature Extraction via CNN)"]
+        CNN2 --> FP2["Input Wave Fingerprint Vector<br/>(16 Numbers - Compact representation)"]
+    end
+    
+    %% Cosine Similarity & Match Results
+    Index --> Cosine
+    FP2 --> Cosine["Cosine Similarity Engine<br/>(Compute Cosine Similarity: A·B / ||A||||B||)"]
+    Cosine --> Results["Match Results<br/>(Top-N Similar Matches Ranked High to Low)"]
+    
+    %% Apply styles
+    class DB,Index db;
+    class CNN1,FP1,CNN2,FP2,SPU process;
+    class Cosine engine;
+    class Results results;
+    class Offline offline;
+    class RealTime realtime;
 ```
 
 ---

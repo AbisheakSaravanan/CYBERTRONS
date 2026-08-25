@@ -27,74 +27,35 @@
 | **Linting & Quality** | [Oxlint](https://oxc-project.github.io/) |
 
 ---
-# ONNX Model: `csi_model.onnx`
+# ONNX Model Specifications: CSI Activity Classifier
 
-Technical specifications and quick-start guide for the CSI activity classifier.
-
-## 1. Specifications & I/O
-* **Format**: ONNX (Opset 18) exported from PyTorch 2.x
-* **Input (`input`)**: `Float32[batch_size, 2, packets, subcarriers]` (Channel 0: Amplitude, Channel 1: Phase)
-* **Output (`output`)**: `Float32[batch_size, 5]` (Classification logits)
-
-## 2. Classification Classes
-* `0`: Standing
-* `1`: Sitting
-* `2`: Walking
-* `3`: Running
-* `4`: Falling
-
-## 3. Quick Start (Python)
-```python
-import numpy as np
-import onnxruntime as ort
-
-session = ort.InferenceSession("csi_model.onnx")
-# Input shape: (batch_size, channels, packets, subcarriers)
-x = np.random.rand(1, 2, 50, 114).astype(np.float32)
-logits = session.run(None, {session.get_inputs()[0].name: x})[0]
-predicted_class = np.argmax(logits, axis=1)[0]
-
-
-## Project Structure
-
-```text
-src/
-├── components/
-│   ├── alerts/       # Fall alert modals and priority notifications
-│   ├── assistant/    # AI / Clinical assistant drawer
-│   ├── audit/        # Security and compliance audit logs
-│   ├── auth/         # MFA, Break-Glass protocols, Login
-│   ├── dashboard/    # Command dashboard, ward filters, room grids
-│   ├── health/       # Sensor mesh health & telemetry status
-│   ├── layout/       # Sidebar and top navigation bars
-│   ├── room/         # Room details, ClinicalView, TechnicalView, AlertPanel
-│   └── ui/           # Confidence gauges, badges, waveform strips
-├── lib/
-│   ├── mockEngine.ts # Real-time synthetic CSI signal generator
-│   └── utils.ts      # Class merging and formatting helpers
-├── store/
-│   └── useStore.ts   # Global Zustand store (alerts, rooms, audit, user state)
-├── types/
-│   └── index.ts      # TypeScript definitions for rooms, CSI signals, alerts
-├── App.tsx           # Main application root
-└── main.tsx          # React DOM entry point
+## 1. Project Overview & Clinical Context
+Our solution features a state-of-the-art **Channel State Information (CSI) Classifier** designed for non-intrusive, privacy-preserving Human Activity Recognition (HAR). By utilizing standard Wi-Fi subcarrier signals, the system detects micro-fluctuations in amplitude and phase caused by human movement. This device-free approach requires no wearable sensors or privacy-infringing cameras, making it ideal for continuous, real-time patient monitoring in hospitals and smart-home care environments.
 
 ---
 
-## Machine Learning & ONNX Integration
+## 2. Input Signal Representation (Dual-Channel CSI Matrix)
+Rather than treating CSI data as a simple 1D stream, our model processes it as a **dual-channel 2D image** representing spatial-temporal signal patterns:
+* **Channel 0 (Amplitude)**: Captures the raw energy variations and signal attenuation profile.
+* **Channel 1 (Phase)**: Tracks the frequency shift and angular changes in signal paths.
+* **Temporal Dynamic Windowing**: Dynamically captures a sequence of Wi-Fi packets over time, allowing the model to adapt to varying sampling rates and signal lengths.
 
-The system uses a 2D CNN classification model trained on Channel State Information (CSI) amplitude and phase waveforms to classify patient activities and detect falls.
+---
 
-* **Model File**: `csi_model.onnx` (Opset 18)
-* **Input Tensor (`input`)**: `[batch_size, 2, packets, subcarriers]` (Float32)
-* **Output Tensor (`output`)**: `[batch_size, 5]` (Float32 class logits)
+## 3. Deep Learning Architecture
+The neural network employs a custom **2D Convolutional Neural Network (CNN)** designed to extract deep spatial-temporal signatures from the raw CSI streams:
+* **Feature Extraction**: Two consecutive Conv2D layers with Batch Normalization and ReLU activations extract high-level feature maps (such as periodic gait patterns or sudden energy spikes).
+* **Adaptive Spatial Compression**: An *Adaptive Average Pooling* layer compresses variable packet and subcarrier sizes into a fixed-dimensional latent representation. This enables the model to support different Wi-Fi bandwidth settings (e.g., 20MHz/40MHz) without retraining.
+* **Classification Head**: Fully connected layers map the extracted features to class probabilities across 5 target actions.
 
-### Target Classification Classes
-1. `Standing` (Index 0)
-2. `Sitting` (Index 1)
-3. `Walking` (Index 2)
-4. `Running` (Index 3)
-5. `Falling` (Index 4)
+---
 
-*For the full architecture breakdown, layer specifications, and inference code example, see [onnx_details.md](./onnx_details.md).*
+## 4. Key Engineering & Optimization Highlights
+* **ONNX Edge Optimization**: The model is exported to the Open Neural Network Exchange (ONNX) format with **Constant Folding** enabled, significantly reducing inference latency and memory footprint.
+* **Dynamic Tensor Configurations**: Support for dynamic batch sizes and sequence lengths ensures high flexibility for real-time edge deployment on CPU/GPU hardware.
+* **Robust Event Detection**:
+  * **Standing / Sitting**: Identified by flat, stable amplitude profiles.
+  * **Walking / Running**: Identified by periodic oscillatory patterns (1.5 Hz to 3 Hz).
+  * **Fall Detection**: Identified by a distinct high-energy signal spike followed by a sudden drop to near-zero amplitude, indicating a rapid level change and subsequent lack of motion.
 
+---

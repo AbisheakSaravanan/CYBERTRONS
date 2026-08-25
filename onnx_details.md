@@ -15,7 +15,7 @@ This document provides the complete technical specifications, input/output tenso
 | **Target Task** | Human Activity Recognition (HAR) via Wi-Fi Sensing |
 | **Optimizations** | Constant Folding enabled |
 
----
+---i
 
 ## 2. Input and Output Tensors
 

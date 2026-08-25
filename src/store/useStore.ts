@@ -5,20 +5,19 @@ import type {
   FallAlert,
   Role,
   Room,
-  RoomReading,
   SensorNode,
   Session,
   Ward,
 } from '../types';
 import {
-  generateRooms,
-  generateSensors,
-  genesisAuditEntry,
-  nextAuditEntry,
-  pick,
-  rand,
-  randInt,
-} from '../lib/mockEngine';
+  fetchSystemState,
+  acknowledgeAlert as apiAcknowledgeAlert,
+  escalateAlert as apiEscalateAlert,
+  resolveAlert as apiResolveAlert,
+  activateBreakGlass as apiActivateBreakGlass,
+  triggerDemoFall,
+  connectWebSocket,
+} from '../lib/api';
 
 export type View = 'dashboard' | 'room' | 'sensors' | 'audit';
 
@@ -36,7 +35,7 @@ interface StoreState {
   assistantOpen: boolean;
   engineStarted: boolean;
 
-  login: (employeeId: string, displayName: string, role: Role) => void;
+  login: (employeeId: string, displayName: string, role: Role) => Promise<void>;
   logout: () => void;
   setRole: (role: Role) => void;
   setView: (v: View) => void;
@@ -44,20 +43,20 @@ interface StoreState {
   setWardFilter: (w: Ward | 'All') => void;
   toggleAssistant: () => void;
 
-  activateBreakGlass: (reason: string, rationale: string) => void;
+  activateBreakGlass: (reason: string, rationale: string) => Promise<void>;
   endBreakGlass: () => void;
 
-  acknowledgeAlert: (id: string, by: string) => void;
-  escalateAlert: (id: string) => void;
-  resolveAlert: (id: string) => void;
+  acknowledgeAlert: (id: string, by: string) => Promise<void>;
+  escalateAlert: (id: string) => Promise<void>;
+  resolveAlert: (id: string) => Promise<void>;
 
-  simulateFallInRoom: (roomId: string) => void;
+  simulateFallInRoom: (roomId: string) => Promise<void>;
   startEngine: () => void;
   stopEngine: () => void;
   logAction: (action: string, resource: string) => void;
 }
 
-let engineHandle: number | null = null;
+let socket: WebSocket | null = null;
 
 export const useStore = create<StoreState>((set, get) => ({
   session: null,
@@ -65,7 +64,7 @@ export const useStore = create<StoreState>((set, get) => ({
   rooms: [],
   sensors: [],
   alerts: [],
-  auditLog: [genesisAuditEntry()],
+  auditLog: [],
   breakGlass: { active: false, reason: '', rationale: '', activatedAt: null, expiresAt: null, activatedBy: null },
   view: 'dashboard',
   selectedRoomId: null,
@@ -73,22 +72,34 @@ export const useStore = create<StoreState>((set, get) => ({
   assistantOpen: false,
   engineStarted: false,
 
-  login: (employeeId, displayName, role) => {
-    const rooms = generateRooms();
-    const sensors = generateSensors(rooms);
-    set({
-      session: { employeeId, displayName, role, loggedInAt: new Date().toISOString() },
-      role,
-      rooms,
-      sensors,
-    });
-    get().logAction('Authenticated (MFA verified)', 'auth/session');
-    get().startEngine();
+  login: async (employeeId, displayName, role) => {
+    // 1. Fetch initial state from the FastAPI REST server
+    try {
+      const initialState = await fetchSystemState();
+      set({
+        session: { employeeId, displayName, role, loggedInAt: new Date().toISOString() },
+        role,
+        rooms: initialState.rooms || [],
+        sensors: initialState.sensors || [],
+        alerts: initialState.alerts || [],
+        auditLog: initialState.auditLog || [],
+      });
+      
+      // 2. Connect to the WebSocket feed
+      get().startEngine();
+      get().logAction('Authenticated (Live Connection Initialized)', 'auth/session');
+    } catch (e) {
+      console.error('Error logging in and fetching state:', e);
+      // Fail-safe fallback if backend is offline so user can still see dashboard (mocking)
+      set({
+        session: { employeeId, displayName, role, loggedInAt: new Date().toISOString() },
+        role,
+      });
+    }
   },
 
   logout: () => {
     get().stopEngine();
-    get().logAction('Session terminated', 'auth/session');
     set({ session: null, rooms: [], sensors: [], alerts: [], view: 'dashboard', selectedRoomId: null });
   },
 
@@ -103,9 +114,18 @@ export const useStore = create<StoreState>((set, get) => ({
   setWardFilter: (w) => set({ wardFilter: w }),
   toggleAssistant: () => set((s) => ({ assistantOpen: !s.assistantOpen })),
 
-  activateBreakGlass: (reason, rationale) => {
+  activateBreakGlass: async (reason, rationale) => {
     const now = new Date();
     const expires = new Date(now.getTime() + 15 * 60 * 1000);
+    const actor = get().session?.displayName ?? 'unknown';
+    
+    // Call backend endpoint to log this event in the hash chain database
+    try {
+      await apiActivateBreakGlass(reason, rationale, actor);
+    } catch (e) {
+      console.error('Break glass logging failed:', e);
+    }
+    
     set({
       breakGlass: {
         active: true,
@@ -113,10 +133,9 @@ export const useStore = create<StoreState>((set, get) => ({
         rationale,
         activatedAt: now.toISOString(),
         expiresAt: expires.toISOString(),
-        activatedBy: get().session?.displayName ?? 'unknown',
+        activatedBy: actor,
       },
     });
-    get().logAction(`BREAK-GLASS ACTIVATED — reason: ${reason}`, 'security/break-glass');
   },
 
   endBreakGlass: () => {
@@ -124,133 +143,122 @@ export const useStore = create<StoreState>((set, get) => ({
     get().logAction('Break-glass session ended', 'security/break-glass');
   },
 
-  acknowledgeAlert: (id, by) => {
+  acknowledgeAlert: async (id, by) => {
+    // Optimistic update for instant UI feedback
     set((s) => ({
       alerts: s.alerts.map((a) =>
         a.id === id ? { ...a, stage: 'acknowledged', acknowledgedBy: by, acknowledgedAt: new Date().toISOString() } : a,
       ),
     }));
-    get().logAction(`Acknowledged fall alert ${id}`, `alerts/${id}`);
+    try {
+      await apiAcknowledgeAlert(id, by);
+    } catch (e) {
+      console.error('Failed to acknowledge alert:', e);
+    }
   },
 
-  escalateAlert: (id) => {
+  escalateAlert: async (id) => {
+    const actor = get().session?.displayName ?? 'unknown';
+    // Optimistic update
     set((s) => ({
       alerts: s.alerts.map((a) => (a.id === id ? { ...a, stage: 'escalated', escalatedAt: new Date().toISOString() } : a)),
     }));
-    get().logAction(`Escalated to Rapid Response Team: ${id}`, `alerts/${id}`);
+    try {
+      await apiEscalateAlert(id, actor);
+    } catch (e) {
+      console.error('Failed to escalate alert:', e);
+    }
   },
 
-  resolveAlert: (id) => {
-    set((s) => ({ alerts: s.alerts.map((a) => (a.id === id ? { ...a, stage: 'resolved' } : a)) }));
-    get().logAction(`Resolved fall alert ${id}`, `alerts/${id}`);
-  },
-
-  simulateFallInRoom: (roomId) => {
-    const room = get().rooms.find((r) => r.id === roomId);
-    if (!room) return;
-    const reading: RoomReading = {
-      activity: 'possible_fall',
-      confidence: randInt(70, 88),
-      postEventVector: 'low',
-      timestamp: new Date().toISOString(),
-    };
+  resolveAlert: async (id) => {
+    const actor = get().session?.displayName ?? 'unknown';
+    // Optimistic update
     set((s) => ({
-      rooms: s.rooms.map((r) => (r.id === roomId ? { ...r, current: reading, history: [...r.history.slice(-40), reading], lastUpdated: reading.timestamp } : r)),
+      alerts: s.alerts.map((a) => (a.id === id ? { ...a, stage: 'resolved' } : a)),
     }));
-    const alertId = `alert-${Date.now()}`;
-    const verificationEnds = new Date(Date.now() + 15000).toISOString();
-    const alert: FallAlert = {
-      id: alertId,
-      roomId,
-      roomCode: room.code,
-      ward: room.ward,
-      stage: 'verifying',
-      confidence: reading.confidence,
-      postEventVector: reading.postEventVector,
-      verificationEndsAt: verificationEnds,
-      createdAt: reading.timestamp,
-      acknowledgedBy: null,
-      acknowledgedAt: null,
-      escalatedAt: null,
-    };
-    set((s) => ({ alerts: [alert, ...s.alerts] }));
-    get().logAction(`Possible fall detected — verification window opened`, `rooms/${room.code}`);
+    try {
+      await apiResolveAlert(id, actor);
+    } catch (e) {
+      console.error('Failed to resolve alert:', e);
+    }
+  },
 
-    window.setTimeout(() => {
-      const still = get().alerts.find((a) => a.id === alertId);
-      if (!still || still.stage !== 'verifying') return;
-      const confirmedReading: RoomReading = {
-        activity: 'confirmed_fall',
-        confidence: randInt(89, 99),
-        postEventVector: pick(['medium', 'high']),
-        timestamp: new Date().toISOString(),
-      };
-      set((s) => ({
-        rooms: s.rooms.map((r) => (r.id === roomId ? { ...r, current: confirmedReading, history: [...r.history.slice(-40), confirmedReading], lastUpdated: confirmedReading.timestamp } : r)),
-        alerts: s.alerts.map((a) => (a.id === alertId ? { ...a, stage: 'confirmed', confidence: confirmedReading.confidence, postEventVector: confirmedReading.postEventVector, verificationEndsAt: null } : a)),
-      }));
-      get().logAction('CONFIRMED FALL — urgent alert broadcast', `rooms/${room.code}`);
-    }, 15000);
+  simulateFallInRoom: async (roomId) => {
+    try {
+      await triggerDemoFall(roomId);
+    } catch (e) {
+      console.error('Failed to trigger simulation fall:', e);
+    }
   },
 
   logAction: (action, resource) => {
-    set((s) => {
-      const prev = s.auditLog[0];
-      const entry = nextAuditEntry(prev, {
-        actor: s.session?.displayName ?? 'SYSTEM',
-        role: s.session?.role ?? 'administrator',
-        action,
-        resource,
-        ip: `10.${randInt(10, 40)}.${randInt(0, 255)}.${randInt(2, 254)}`,
-      });
-      return { auditLog: [entry, ...s.auditLog].slice(0, 300) };
-    });
+    // Audit logs are stored and calculated in the backend, but we keep this hook
+    // to print in the browser console.
+    console.log(`[AuditLog] ${action} on ${resource}`);
   },
 
   startEngine: () => {
     if (get().engineStarted) return;
     set({ engineStarted: true });
-    engineHandle = window.setInterval(() => {
-      const { rooms, alerts } = get();
-      if (rooms.length === 0) return;
+    
+    // Connect WebSockets to receive live updates from FastAPI orchestrator
+    socket = connectWebSocket(
+      (data) => {
+        // Callback when data is received: update rooms, alerts, sensors, and auditLog
+        // Preserve local advanced alert stages (acknowledged, resolved, escalated) to prevent
+        // in-flight telemetry updates from reverting the state before the REST transaction finishes committing.
+        const currentAlerts = get().alerts;
+        const localUpdated = new Map(
+          (currentAlerts || [])
+            .filter((a) => a.stage === 'acknowledged' || a.stage === 'resolved' || a.stage === 'escalated')
+            .map((a) => [a.id, a])
+        );
 
-      // Drift a handful of rooms' telemetry each tick to feel alive.
-      const drift = Math.max(1, Math.floor(rooms.length * 0.12));
-      const idxSet = new Set<number>();
-      while (idxSet.size < drift) idxSet.add(randInt(0, rooms.length - 1));
+        const mergedAlerts = (data.alerts || []).map((incoming: any) => {
+          const local = localUpdated.get(incoming.id);
+          if (local) {
+            // Keep local stage if incoming stage is older (verifying or confirmed)
+            if (incoming.stage === 'verifying' || incoming.stage === 'confirmed') {
+              return {
+                ...incoming,
+                stage: local.stage,
+                acknowledgedBy: local.acknowledgedBy,
+                acknowledgedAt: local.acknowledgedAt,
+                escalatedAt: local.escalatedAt
+              };
+            }
+          }
+          return incoming;
+        });
 
-      set((s) => ({
-        rooms: s.rooms.map((r, i) => {
-          if (!idxSet.has(i) || !r.sensorOnline) return r;
-          const currentlyAlerting = alerts.some((a) => a.roomId === r.id && (a.stage === 'verifying' || a.stage === 'confirmed'));
-          if (currentlyAlerting) return r;
-          const activities: RoomReading['activity'][] = ['no_movement', 'sitting', 'standing', 'walking', 'lying'];
-          const reading: RoomReading = {
-            activity: pick(activities),
-            confidence: randInt(76, 99),
-            postEventVector: pick(['low', 'medium', 'high']),
-            timestamp: new Date().toISOString(),
-          };
-          return { ...r, current: reading, history: [...r.history.slice(-40), reading], lastUpdated: reading.timestamp };
-        }),
-        sensors: s.sensors.map((sn) =>
-          rand() > 0.7
-            ? { ...sn, rssi: -1 * randInt(38, 78), packetRateHz: randInt(85, 120), lastHeartbeat: new Date().toISOString() }
-            : sn,
-        ),
-      }));
-
-      // Rare spontaneous fall simulation to demonstrate the escalation flow.
-      if (rand() > 0.985 && get().alerts.every((a) => a.stage === 'resolved' || a.stage === 'acknowledged' || a.stage === 'escalated')) {
-        const candidate = get().rooms[randInt(0, get().rooms.length - 1)];
-        if (candidate?.sensorOnline) get().simulateFallInRoom(candidate.id);
+        set({
+          rooms: data.rooms || [],
+          alerts: mergedAlerts,
+          sensors: data.sensors || [],
+          auditLog: data.auditLog || [],
+        });
+      },
+      (err) => {
+        console.error('WebSocket Error:', err);
+      },
+      () => {
+        console.log('WebSocket Connection Closed. Attempting reconnect in 5s...');
+        set({ engineStarted: false });
+        // Auto-reconnect after 5 seconds if connection drops
+        setTimeout(() => {
+          if (get().session) {
+            get().startEngine();
+          }
+        }, 5000);
       }
-    }, 3500);
+    );
   },
 
   stopEngine: () => {
-    if (engineHandle) window.clearInterval(engineHandle);
-    engineHandle = null;
+    if (socket) {
+      socket.close();
+      socket = null;
+    }
     set({ engineStarted: false });
   },
 }));

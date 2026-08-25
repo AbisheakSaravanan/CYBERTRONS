@@ -32,7 +32,7 @@ Decision Engine
   | Decision
   ↓
 Frontend
-
+```
 CSI Parsing
 Description
 
@@ -45,6 +45,7 @@ The interleaved imaginary and real values are then converted into numerical arra
 Input
 Raw CSI serial record
 Processing
+```
 Raw CSI
    ↓
 Read record
@@ -54,6 +55,8 @@ Separate fields
 Extract Real and Imaginary values
    ↓
 Create structured CSI data
+```
+
 Output
 Structured CSI values
 

@@ -1,61 +1,110 @@
-# Aegis CSI Hospital Monitor
+# AegisCSI Hospital Monitor
 
-**Aegis CSI Hospital Monitor** is a real-time, non-invasive patient monitoring and telemetry dashboard powered by Channel State Information (CSI) sensing analytics. It provides healthcare staff with continuous telemetry, motion analytics, posture tracking, and alert dispatching across hospital wards.
-
----
-
-## Key Features
-
-* **Live Telemetry & Vital Streams:** Real-time CSI signal processing, vital sign tracking, and dynamic waveform rendering via Recharts.
-* **Intelligent Alerts & Fall Detection:** Automated severity classification (`critical`, `warning`), modal emergency triggers, and quick alert acknowledgement.
-* **Dual Clinical & Technical Views:** Seamlessly switch between clinical summaries (patient status, timeline, gauge confidence) and RF technical views (subcarrier amplitude, phase shifts, link health).
-* **Ward & Room Filtering:** Multi-ward command dashboard with dynamic status filtering (Occupied, Alert, Normal).
-* **Enterprise Security & Compliance:** Multi-Factor Authentication (MFA) workflows, Emergency Break-Glass protocols, and tamper-evident audit logging.
-* **Local State Management:** Fast, predictable client state powered by Zustand with reactive mock telemetry streams.
+AegisCSI is a state-of-the-art clinical Wi-Fi Channel State Information (CSI) patient monitoring system. It leverages ESP32 nodes to capture real-time physical perturbations, passes them through a signal processing pipeline, feeds them to machine learning classifiers, and visualizes live activity, diagnostics, and critical fall alerts on a secure, responsive hospital dashboard.
 
 ---
 
-## Tech Stack
+## System Architecture
 
-| Layer | Technologies |
-| :--- | :--- |
-| **Framework** | [React 18+](https://react.dev/) + [TypeScript](https://www.typescriptlang.org/) |
-| **Build Tooling** | [Vite](https://vitejs.dev/) |
-| **State Management** | [Zustand](https://github.com/pmndrs/zustand) |
-| **UI & Styling** | [Tailwind CSS](https://tailwindcss.com/) + [Lucide React](https://lucide.dev/) |
-| **Data Visualization** | [Recharts](https://recharts.org/) |
-| **Linting & Quality** | [Oxlint](https://oxc-project.github.io/) |
-
----
-# ONNX Model Specifications: CSI Activity Classifier
-
-## 1. Project Overview & Clinical Context
-Our solution features a state-of-the-art **Channel State Information (CSI) Classifier** designed for non-intrusive, privacy-preserving Human Activity Recognition (HAR). By utilizing standard Wi-Fi subcarrier signals, the system detects micro-fluctuations in amplitude and phase caused by human movement. This device-free approach requires no wearable sensors or privacy-infringing cameras, making it ideal for continuous, real-time patient monitoring in hospitals and smart-home care environments.
-
----
-
-## 2. Input Signal Representation (Dual-Channel CSI Matrix)
-Rather than treating CSI data as a simple 1D stream, our model processes it as a **dual-channel 2D image** representing spatial-temporal signal patterns:
-* **Channel 0 (Amplitude)**: Captures the raw energy variations and signal attenuation profile.
-* **Channel 1 (Phase)**: Tracks the frequency shift and angular changes in signal paths.
-* **Temporal Dynamic Windowing**: Dynamically captures a sequence of Wi-Fi packets over time, allowing the model to adapt to varying sampling rates and signal lengths.
+```mermaid
+graph TD
+    ESP[ESP32 CSI Transmitter/Receiver] -- Serial (115200) --> Bridge[ESP32 Relaying Bridge]
+    Bridge -- HTTP POST /api/ingest --> FastAPI[FastAPI Backend Server]
+    FastAPI -- SQLAlchemy --> DB[(SQLite / PostgreSQL DB)]
+    FastAPI -- WebSockets /ws/live --> React[React Hospital Board Dashboard]
+    
+    subgraph FastAPI Backend
+        Pipe[Signal Processing Pipeline] --> ML[Statistical Fallback Classifier]
+        ML --> Staging[Fall Staging Logic]
+        Staging --> Sweeper[Background Alert Sweeper]
+    end
+```
 
 ---
 
-## 3. Deep Learning Architecture
-The neural network employs a custom **2D Convolutional Neural Network (CNN)** designed to extract deep spatial-temporal signatures from the raw CSI streams:
-* **Feature Extraction**: Two consecutive Conv2D layers with Batch Normalization and ReLU activations extract high-level feature maps (such as periodic gait patterns or sudden energy spikes).
-* **Adaptive Spatial Compression**: An *Adaptive Average Pooling* layer compresses variable packet and subcarrier sizes into a fixed-dimensional latent representation. This enables the model to support different Wi-Fi bandwidth settings (e.g., 20MHz/40MHz) without retraining.
-* **Classification Head**: Fully connected layers map the extracted features to class probabilities across 5 target actions.
+## Project Structure
+
+- `backend/`: FastAPI REST + WebSocket Server
+  - `app/signal_processing/`: CSI parsing, amplitude/phase extraction, lowpass Butterworth filtering, and temporal windowing.
+  - `app/models.py`: Database models mapped via SQLAlchemy (supports SQLite & PostgreSQL).
+  - `app/ml_inference.py`: Fallback ML Classifier executing stateful motion energy calculations.
+  - `app/fall_logic.py`: Logic checking for motion-energy spikes and stillness transitions.
+  - `app/alert_sweeper.py`: Background worker monitoring the 15-second verification window.
+  - `app/main.py`: Main routes, WebSocket live broadcasts, and seeding logic.
+  - `esp32-bridge/esp_bridge.py`: Relay client for hardware or multi-device simulation.
+- `extracted_frontend/aegis-csi-hospital-monitor/`: React + TypeScript frontend dashboard rewired to consume backend REST APIs and live WebSockets.
 
 ---
 
-## 4. Key Engineering & Optimization Highlights
-* **ONNX Edge Optimization**: The model is exported to the Open Neural Network Exchange (ONNX) format with **Constant Folding** enabled, significantly reducing inference latency and memory footprint.
-* **Dynamic Tensor Configurations**: Support for dynamic batch sizes and sequence lengths ensures high flexibility for real-time edge deployment on CPU/GPU hardware.
-* **Robust Event Detection**:
-  * **Standing / Sitting**: Identified by flat, stable amplitude profiles.
-  * **Walking / Running**: Identified by periodic oscillatory patterns (1.5 Hz to 3 Hz).
-  * **Fall Detection**: Identified by a distinct high-energy signal spike followed by a sudden drop to near-zero amplitude, indicating a rapid level change and subsequent lack of motion.
+## Quick Start (Hardware-Free Demo Mode)
+
+To run the application locally without physical ESP32 sensors, follow these instructions to spin up the mock network.
+
+### 1. Set Up and Run the Backend
+
+Navigate to the root workspace directory, configure a Python virtual environment, install the dependencies, and start the FastAPI server:
+
+```bash
+# Create and activate Python virtual environment
+python3 -m venv venv
+source venv/bin/activate
+
+# Install backend dependencies
+pip install -r backend/requirements.txt
+
+# Start the FastAPI server (runs on port 8000 by default)
+python3 -m uvicorn backend.app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+On first startup, the backend automatically initializes an SQLite database (`aegis_csi.db`) and seeds it with 32 clinical rooms, devices, model versions, users, roles, and a genesis hash-chained audit entry.
 
 ---
+
+### 2. Set Up and Run the Frontend
+
+In a new terminal window, build and start the React application using Vite:
+
+```bash
+# Navigate to the frontend folder
+cd extracted_frontend/aegis-csi-hospital-monitor
+
+# Install frontend node modules (if not already installed)
+npm install
+
+# Start Vite dev server (runs on port 5173 by default)
+npm run dev
+```
+
+Open your browser to `http://localhost:5173`. Select any user (e.g. Nurse Sarah Jenkins or Dr. Arun Kumar) from the drop-down menu and log in. You will see the Live Dashboard. Initially, the room states will show `no_movement` as no packets are flowing.
+
+---
+
+### 3. Spin Up the ESP32 CSI Bridge Simulator
+
+In a third terminal window, start the bridge simulator. It generates live, fluctuating CSI waveforms for all 32 rooms and automatically schedules random fall scenarios to demonstrate the alert workflow:
+
+```bash
+# Ensure you are in the workspace root and your venv is active
+source venv/bin/activate
+
+# Run the bridge in simulation mode
+python backend/esp32-bridge/esp_bridge.py --simulate
+```
+
+The bridge will begin POSTing packets to the backend, which will process them, save waveforms to the DB, run the ML predictions, and broadcast updates to your React browser window. You will see CSI subcarrier amplitudes fluctuate in real time under the "Technical View" of any room, and occasional "Verifying" alerts will slide open, converting to "Confirmed" after 15 seconds of stillness, or "Resolved" if they stand back up.
+
+---
+
+## Physical Hardware Deployment
+
+To connect a real ESP32 CSI provider running the CSI firmware:
+
+1. Connect the ESP32 node to your computer via USB.
+2. Verify the serial port name (e.g. `COM7` on Windows, or `/dev/ttyUSB0` on Linux/macOS).
+3. Stop the simulator and run the bridge pointing to the physical port:
+
+```bash
+python backend/esp32-bridge/esp_bridge.py --port /dev/ttyUSB0
+```
+
+The bridge will now read serial lines directly from the device, parse the packet metadata, and POST them to the backend ingest server in real-time.

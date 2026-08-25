@@ -51,3 +51,22 @@ src/
 │   └── index.ts      # TypeScript definitions for rooms, CSI signals, alerts
 ├── App.tsx           # Main application root
 └── main.tsx          # React DOM entry point
+
+---
+
+## Machine Learning & ONNX Integration
+
+The system uses a 2D CNN classification model trained on Channel State Information (CSI) amplitude and phase waveforms to classify patient activities and detect falls.
+
+* **Model File**: `csi_model.onnx` (Opset 18)
+* **Input Tensor (`input`)**: `[batch_size, 2, packets, subcarriers]` (Float32)
+* **Output Tensor (`output`)**: `[batch_size, 5]` (Float32 class logits)
+
+### Target Classification Classes
+1. `Standing` (Index 0)
+2. `Sitting` (Index 1)
+3. `Walking` (Index 2)
+4. `Running` (Index 3)
+5. `Falling` (Index 4)
+
+*For the full architecture breakdown, layer specifications, and inference code example, see [onnx_details.md](./onnx_details.md).*
